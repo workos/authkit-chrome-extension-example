@@ -1,0 +1,7 @@
+{
+  "apiKey": "sk_test_...",
+  "clientId": "client_...",
+  "cookiePassword": "must be at least 32 characters long",
+  "cookieDomain": "http://localhost:3000",
+  "redirectUri": "http://localhost:3000/callback"
+}
