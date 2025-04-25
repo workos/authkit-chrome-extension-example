@@ -1,15 +1,22 @@
 import { authkit } from './authkit';
 
+/**
+ * A session manager that handles session refresh and management.
+ * It checks the session status at regular intervals and refreshes the session if it's about to expire.
+ */
 export class SessionManager {
   private refreshInterval: undefined | ReturnType<typeof setInterval>;
   // private readonly checkIntervalMs = 5 * 60 * 1000;
-  private readonly checkIntervalMs = 10_000;
+  private readonly checkIntervalMs = 10_000; // for demo purposes, check every 10 seconds
   private refreshBufferSeconds = 300;
 
   constructor() {
     this.startSessionManagement();
   }
 
+  /**
+   * Starts the session management process.
+   */
   startSessionManagement() {
     if (this.refreshInterval) {
       return; // already running
@@ -22,6 +29,9 @@ export class SessionManager {
     this.checkAndRefreshSession();
   }
 
+  /**
+   * Checks the session status and refreshes it if necessary.
+   */
   async checkAndRefreshSession() {
     try {
       console.log('Checking session status...');
@@ -53,6 +63,9 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Refreshes the session using the authkit library.
+   */
   async refreshSession() {
     try {
       console.log('Refreshing session...');
@@ -81,6 +94,9 @@ export class SessionManager {
     }
   }
 
+  /**
+   * Stops the session management process.
+   */
   stopSessionManagement() {
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
