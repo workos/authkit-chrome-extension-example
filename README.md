@@ -44,7 +44,7 @@ A Chrome extension that integrates with WorkOS AuthKit for authentication manage
 
 ## Usage with AuthKit Example App
 
-This extension is designed to work with the [next-authkit-example](https://github.com/workos/next-authkit-example) application. You'll need to run both this extension and the next-authkit-example app together for full functionality. The extension will manage the AuthKit sessions created by the example app.
+This extension is designed to work with the [next-authkit-example](https://github.com/workos/next-authkit-example) application as an example AuthKit app. You'll need to run both this extension and the next-authkit-example app together for full functionality. The extension will manage the AuthKit sessions created by the example app.
 
 ## Development
 
