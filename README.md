@@ -2,6 +2,12 @@
 
 A Chrome extension that integrates with WorkOS AuthKit for authentication management.
 
+
+
+https://github.com/user-attachments/assets/e7b90729-a200-4743-9a9f-1294ebb2e698
+
+
+
 ## Features
 
 - Manage AuthKit sessions within Chrome browser
