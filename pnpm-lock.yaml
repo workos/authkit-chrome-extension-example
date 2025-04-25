@@ -11,6 +11,9 @@ importers:
       '@workos-inc/authkit-ssr':
         specifier: 0.0.1-alpha.0
         version: 0.0.1-alpha.0
+      '@workos-inc/node':
+        specifier: ^7.47.0
+        version: 7.47.0
       iron-webcrypto:
         specifier: ^1.2.1
         version: 1.2.1

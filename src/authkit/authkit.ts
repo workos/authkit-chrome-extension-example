@@ -1,6 +1,7 @@
 import { type AuthKitConfig, SessionStorage, configure, createAuthKitFactory } from '@workos-inc/authkit-ssr';
 import { WebSessionEncryption } from './WebSessionEncryption';
 import conf from '../../config.json';
+import getWorkOS from './workosLite';
 
 /**
  * A session storage implementation that uses Chrome's cookie storage.
@@ -68,4 +69,5 @@ export const authkit = createAuthKitFactory<void, void>({
   // use  iron-session campatible encryption that works in the browser / extension environment
   sessionEncryptionFactory: () => new WebSessionEncryption(),
   sessionStorageFactory: config => new ChromeExtensionStorage(config.cookieDomain!, config.cookieName),
+  clientFactory: getWorkOS,
 });
