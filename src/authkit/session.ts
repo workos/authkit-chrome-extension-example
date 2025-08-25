@@ -41,7 +41,12 @@ export interface SessionData {
  */
 function base64urlToBytes(base64url: string): Uint8Array {
   const base64 = base64url.replace(/-/g, '+').replace(/_/g, '/') + '='.repeat((4 - (base64url.length % 4)) % 4);
-  return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
 }
 
 function bytesToBase64url(bytes: Uint8Array): string {
@@ -50,7 +55,12 @@ function bytesToBase64url(bytes: Uint8Array): string {
 }
 
 function base64ToBytes(base64: string): Uint8Array {
-  return Uint8Array.from(atob(base64), c => c.charCodeAt(0));
+  const binaryString = atob(base64);
+  const bytes = new Uint8Array(binaryString.length);
+  for (let i = 0; i < binaryString.length; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
 }
 
 /**
@@ -78,7 +88,7 @@ async function deriveKeyBits(options: DerivedKeyOptions): Promise<ArrayBuffer> {
   return crypto.subtle.deriveBits(
     {
       name: 'PBKDF2',
-      salt: saltBytes,
+      salt: saltBytes as BufferSource,
       iterations: options.iterations,
       hash: options.hashAlgorithm,
     },
@@ -94,7 +104,8 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 function generateRandomBytes(length: number): Uint8Array {
-  return crypto.getRandomValues(new Uint8Array(length));
+  const buffer = new Uint8Array(length);
+  return crypto.getRandomValues(buffer);
 }
 
 /**
@@ -172,10 +183,10 @@ async function decryptLegacyData(encryptedB64: string, encryptionIv: string, enc
   const decryptedBuffer = await crypto.subtle.decrypt(
     {
       name: 'AES-CBC',
-      iv: ivBuffer,
+      iv: ivBuffer as BufferSource,
     },
     encryptionKey,
-    encryptedBuffer,
+    encryptedBuffer as BufferSource,
   );
 
   return new TextDecoder().decode(decryptedBuffer);
@@ -243,7 +254,7 @@ async function unsealStandardFormat(decoded: SealedSession): Promise<SessionData
   const derivedKey = await crypto.subtle.deriveKey(
     {
       name: 'PBKDF2',
-      salt: salt,
+      salt: salt as BufferSource,
       iterations: 100000,
       hash: 'SHA-256',
     },
@@ -254,7 +265,7 @@ async function unsealStandardFormat(decoded: SealedSession): Promise<SessionData
   );
 
   // Decrypt the data
-  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv }, derivedKey, encrypted);
+  const decrypted = await crypto.subtle.decrypt({ name: 'AES-GCM', iv: iv as BufferSource }, derivedKey, encrypted as BufferSource);
 
   // Convert decrypted data back to string and parse JSON
   return JSON.parse(new TextDecoder().decode(decrypted));
@@ -338,7 +349,7 @@ async function encryptSessionData(
   const encryptedBuffer = await crypto.subtle.encrypt(
     {
       name: 'AES-CBC',
-      iv: components.encryptionIv,
+      iv: components.encryptionIv as BufferSource,
     },
     encryptionKey,
     new TextEncoder().encode(jsonString),

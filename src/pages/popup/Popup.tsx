@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { authkit } from '../../authkit/authkit';
+import conf from '../../../config.json';
 
 type SessionStatus = {
   isAuthenticated: boolean;
@@ -24,19 +25,6 @@ export default function Popup() {
   const checkSessionStatus = async () => {
     setLoading(true);
     try {
-      // Debug: Check what cookies are available
-      const cookies = await chrome.cookies.getAll({
-        url: 'http://localhost:3000',
-      });
-      console.log(
-        '🍪 POPUP: Available cookies:',
-        cookies.map(c => ({
-          name: c.name,
-          domain: c.domain,
-          httpOnly: c.httpOnly,
-          value: c.value.substring(0, 20) + '...',
-        })),
-      );
 
       const auth = await authkit.withAuth();
 
@@ -51,7 +39,6 @@ export default function Popup() {
           .catch(error => {
             console.error('❌ POPUP: Failed to notify service worker:', error);
           });
-      } else {
       }
 
       setStatus({

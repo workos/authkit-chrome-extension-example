@@ -14,7 +14,6 @@ export class ServiceWorkerAuthClient {
    */
   async hasActiveSession(): Promise<boolean> {
     try {
-      // Check if the workos-has-session indicator cookie exists
       const cookies = await chrome.cookies.getAll({
         url: conf.cookieDomain,
       });
@@ -32,17 +31,13 @@ export class ServiceWorkerAuthClient {
    */
   async refreshSession(): Promise<{ success: boolean; error?: string }> {
     try {
-      // Send message to any open popup to trigger session refresh
-      const tabs = await chrome.tabs.query({ url: '*://localhost:3000/*' });
+      const tabs = await chrome.tabs.query({ url: `${conf.cookieDomain}/*` });
 
       if (tabs.length > 0) {
-        // If AuthKit website is open, assume session is maintained there
         console.log('AuthKit website is open - session should be maintained');
         return { success: true };
       }
 
-      // If no AuthKit website is open, we can't refresh the session
-      // The session will need to be refreshed when user visits the website again
       console.log('No AuthKit website open - cannot refresh session');
       return { success: false, error: 'No active AuthKit website' };
     } catch (error) {
@@ -52,24 +47,22 @@ export class ServiceWorkerAuthClient {
   }
 
   /**
-   * Start periodic session refresh for maintaining phone calls
+   * Start periodic session refresh
    * @param intervalMs - Refresh interval in milliseconds (default: 5 minutes)
    */
   startPeriodicRefresh(intervalMs: number = 5 * 60 * 1000): () => void {
     const refreshLoop = async () => {
       if (await this.hasActiveSession()) {
-        console.log('Refreshing session for phone call maintenance...');
+        console.log('Refreshing session...');
         const result = await this.refreshSession();
 
         if (result.success) {
-          console.log('Session kept alive for phone call');
-          // Here you could make your phone call API request
-          // await this.keepPhoneCallAlive();
+          console.log('Session kept alive');
         } else {
-          console.log('Session expired - phone call may be terminated');
+          console.log('Session expired');
         }
       } else {
-        console.log('No active session - no phone call to maintain');
+        console.log('No active session');
       }
     };
 
@@ -87,19 +80,6 @@ export class ServiceWorkerAuthClient {
     };
   }
 
-  /**
-   * Example method for keeping phone call alive
-   * This would make API calls to your phone service
-   */
-  private async keepPhoneCallAlive(): Promise<void> {
-    // This is where you'd make the API call to your phone service
-    // For example:
-    // await fetch('/api/phone/keep-alive', {
-    //   method: 'POST',
-    //   headers: { Authorization: `Bearer ${accessToken}` }
-    // });
-    console.log('Phone call kept alive (placeholder)');
-  }
 }
 
 // Export singleton instance

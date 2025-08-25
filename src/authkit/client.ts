@@ -25,12 +25,12 @@ export async function createAuthkitClient() {
     apiHostname: 'api.workos.com',
     // Try devMode: true to see if this helps with session detection
     devMode: true, // This might help with cookie access in extension context
-    // Handle refresh failures by logging them but not redirecting
     onRefreshFailure: () => {
-      // Don't auto-redirect in extension context
+      console.log('AuthKit refresh failed in extension context');
     },
-    // Log refresh events for debugging
-    onRefresh: () => {},
+    onRefresh: () => {
+      console.log('AuthKit session refreshed');
+    },
   });
 
   return client;

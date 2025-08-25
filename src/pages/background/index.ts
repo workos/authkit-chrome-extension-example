@@ -1,5 +1,6 @@
 import { authkit } from '../../authkit/authkit';
 import { getTokenRefresher } from '../../authkit/tokenRefresher';
+import conf from '../../../config.json';
 
 // Initialize the token refresher for session management
 const tokenRefresher = getTokenRefresher();
@@ -42,7 +43,7 @@ async function handleSessionTermination() {
 
 // Listen for when a tab is updated (page loaded) to detect new sessions
 chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
-  if (tab.url?.includes('localhost') && changeInfo.status === 'complete') {
+  if (tab.url?.includes(new URL(conf.cookieDomain).hostname) && changeInfo.status === 'complete') {
     // Check if there's a session and start token refresh
     const auth = await authkit.withAuth();
     if (auth.user) {
