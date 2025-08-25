@@ -1,13 +1,11 @@
 import { authkit } from '../../authkit/authkit';
 import { getTokenRefresher } from '../../authkit/tokenRefresher';
 
-
 // Initialize the token refresher for session management
 const tokenRefresher = getTokenRefresher();
 
 // Set up a listener for messages from the content script
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-
   if (message.action === 'terminateSession') {
     handleSessionTermination()
       .then(() => sendResponse({ success: true }))
@@ -21,10 +19,9 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.action === 'sessionActive') {
-    
     // Start token refresh management
     tokenRefresher.startTokenRefresh();
-    
+
     sendResponse({ success: true });
     return true;
   }
@@ -37,7 +34,6 @@ async function handleSessionTermination() {
 
     // Use authkit's comprehensive session clearing method
     await authkit.clearSessionStorage();
-
   } catch (error) {
     console.error('Error during session termination:', error);
     throw error;
@@ -50,13 +46,11 @@ chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
     // Check if there's a session and start token refresh
     const auth = await authkit.withAuth();
     if (auth.user) {
-      
       // Start token refresh management
       tokenRefresher.startTokenRefresh();
     }
   }
 });
-
 
 // Check for existing session on startup
 authkit.withAuth().then(auth => {

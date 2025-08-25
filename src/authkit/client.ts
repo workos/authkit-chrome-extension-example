@@ -1,4 +1,4 @@
-import { createClient } from "@workos-inc/authkit-js";
+import { createClient } from '@workos-inc/authkit-js';
 import conf from '../../config.json';
 
 /**
@@ -20,10 +20,9 @@ export async function createAuthkitClient() {
     return null;
   }
 
-
   const client = await createClient(conf.clientId, {
     redirectUri: conf.redirectUri,
-    apiHostname: "api.workos.com",
+    apiHostname: 'api.workos.com',
     // Try devMode: true to see if this helps with session detection
     devMode: true, // This might help with cookie access in extension context
     // Handle refresh failures by logging them but not redirecting
@@ -31,10 +30,8 @@ export async function createAuthkitClient() {
       // Don't auto-redirect in extension context
     },
     // Log refresh events for debugging
-    onRefresh: () => {
-    }
+    onRefresh: () => {},
   });
-
 
   return client;
 }

@@ -16,13 +16,10 @@ export class ServiceWorkerAuthClient {
     try {
       // Check if the workos-has-session indicator cookie exists
       const cookies = await chrome.cookies.getAll({
-        url: conf.cookieDomain
+        url: conf.cookieDomain,
       });
-      
-      return cookies.some(cookie => 
-        cookie.name === 'workos-has-session' || 
-        cookie.name.includes('wos-session')
-      );
+
+      return cookies.some(cookie => cookie.name === 'workos-has-session' || cookie.name.includes('wos-session'));
     } catch (error) {
       console.error('Error checking session:', error);
       return false;
@@ -37,13 +34,13 @@ export class ServiceWorkerAuthClient {
     try {
       // Send message to any open popup to trigger session refresh
       const tabs = await chrome.tabs.query({ url: '*://localhost:3000/*' });
-      
+
       if (tabs.length > 0) {
         // If AuthKit website is open, assume session is maintained there
         console.log('AuthKit website is open - session should be maintained');
         return { success: true };
       }
-      
+
       // If no AuthKit website is open, we can't refresh the session
       // The session will need to be refreshed when user visits the website again
       console.log('No AuthKit website open - cannot refresh session');
@@ -63,7 +60,7 @@ export class ServiceWorkerAuthClient {
       if (await this.hasActiveSession()) {
         console.log('Refreshing session for phone call maintenance...');
         const result = await this.refreshSession();
-        
+
         if (result.success) {
           console.log('Session kept alive for phone call');
           // Here you could make your phone call API request
@@ -78,7 +75,7 @@ export class ServiceWorkerAuthClient {
 
     // Start the periodic refresh
     const intervalId = setInterval(refreshLoop, intervalMs) as unknown as number;
-    
+
     // Also run once immediately
     refreshLoop();
 

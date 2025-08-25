@@ -331,4 +331,3 @@ MIT
 ---
 
 Built with ❤️ for the WorkOS community. This example demonstrates production-ready patterns for AuthKit Chrome extension integration.
-

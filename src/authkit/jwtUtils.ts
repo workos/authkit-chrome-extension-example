@@ -27,8 +27,8 @@ export function parseJwtClaims(token: string): JwtClaims | null {
 
     const payload = parts[1];
     // Add padding if needed for base64 decoding
-    const paddedPayload = payload + '='.repeat((4 - payload.length % 4) % 4);
-    
+    const paddedPayload = payload + '='.repeat((4 - (payload.length % 4)) % 4);
+
     const decoded = atob(paddedPayload.replace(/-/g, '+').replace(/_/g, '/'));
     return JSON.parse(decoded);
   } catch (error) {
@@ -47,7 +47,7 @@ export function getTokenExpiry(token: string): number | null {
   if (!claims || !claims.exp) {
     return null;
   }
-  
+
   // Convert from seconds to milliseconds
   return claims.exp * 1000;
 }
@@ -64,11 +64,11 @@ export function isTokenExpiring(token: string, bufferSeconds: number = 300): boo
     // If we can't parse expiry, assume it's expiring to be safe
     return true;
   }
-  
+
   const currentTime = Date.now();
   const bufferTime = bufferSeconds * 1000;
-  
-  return (expiryTime - currentTime) <= bufferTime;
+
+  return expiryTime - currentTime <= bufferTime;
 }
 
 /**
@@ -81,6 +81,6 @@ export function getTimeUntilExpiry(token: string): number | null {
   if (!expiryTime) {
     return null;
   }
-  
+
   return Math.max(0, expiryTime - Date.now());
 }

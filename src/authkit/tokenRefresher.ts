@@ -328,4 +328,3 @@ export function getTokenRefresher(): TokenRefresher {
   }
   return tokenRefresher;
 }
-
