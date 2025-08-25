@@ -72,7 +72,7 @@ export default function Popup() {
 
       if (auth.user) {
         // Call authkit's signOut method to properly clear all cookies
-        await authkit.signOut(auth);
+        await authkit.signOut();
 
         // Also notify background script to stop maintenance
         await chrome.runtime.sendMessage({

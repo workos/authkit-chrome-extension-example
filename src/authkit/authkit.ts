@@ -29,7 +29,7 @@ export const authkit = {
             impersonator: null,
             refreshToken: null
           };
-        } catch (error) {
+        } catch {
           // Fall through to cookie-based approach
         }
       }
@@ -113,7 +113,7 @@ export const authkit = {
                   refreshToken: sessionData.refreshToken
                 };
               }
-            } catch (error) {
+            } catch {
               // Fall through to placeholder session
             }
           }
@@ -157,7 +157,7 @@ export const authkit = {
         originalCookieValue: sessionData.originalCookieValue
       };
       
-    } catch (error) {
+    } catch {
       return {
         user: null,
         accessToken: null,
@@ -175,7 +175,7 @@ export const authkit = {
    * @param _ - Unused parameter for compatibility
    * @returns Promise that resolves when logout is complete
    */
-  async signOut(session: any, _?: any) {
+  async signOut() {
     try {
       // Use authkit-js to do proper server-side session termination
       const client = await getAuthkitClient();
@@ -217,7 +217,7 @@ export const authkit = {
       try {
         const cookies = await chrome.cookies.getAll({ url });
         allCookies = allCookies.concat(cookies);
-      } catch (error) {
+      } catch {
         // Silently continue if URL doesn't work
       }
     }
@@ -226,7 +226,7 @@ export const authkit = {
     try {
       const localhostCookies = await chrome.cookies.getAll({ domain: 'localhost' });
       allCookies = allCookies.concat(localhostCookies);
-    } catch (error) {
+    } catch {
       // Silently continue
     }
     
@@ -290,7 +290,6 @@ export const authkit = {
                 localStorage.removeItem(key);
               });
               
-              console.log('Cleared AuthKit localStorage data');
             }
           });
         } catch (error) {
@@ -308,17 +307,17 @@ export const authkit = {
    * @param _ - Unused parameter for compatibility  
    * @returns Object containing logout URL
    */
-  async getLogoutUrl(session: any, _: any) {
+  async getLogoutUrl() {
     const client = await getAuthkitClient();
     
     if (!client) {
-      console.log('AuthKit client not available for getLogoutUrl');
       return { logoutUrl: 'about:blank' };
     }
     
-    if (session.user) {
+    const sessionData = await this.checkStorageBasedSession();
+    if (sessionData.user) {
       // For now, we'll perform logout directly since authkit-js doesn't expose URL generation
-      await this.signOut(session);
+      await this.signOut();
       return { logoutUrl: 'about:blank' }; // Placeholder since we don't need the URL
     }
     

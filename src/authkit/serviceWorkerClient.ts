@@ -59,8 +59,6 @@ export class ServiceWorkerAuthClient {
    * @param intervalMs - Refresh interval in milliseconds (default: 5 minutes)
    */
   startPeriodicRefresh(intervalMs: number = 5 * 60 * 1000): () => void {
-    let intervalId: number;
-    
     const refreshLoop = async () => {
       if (await this.hasActiveSession()) {
         console.log('Refreshing session for phone call maintenance...');
@@ -79,7 +77,7 @@ export class ServiceWorkerAuthClient {
     };
 
     // Start the periodic refresh
-    intervalId = setInterval(refreshLoop, intervalMs) as unknown as number;
+    const intervalId = setInterval(refreshLoop, intervalMs) as unknown as number;
     
     // Also run once immediately
     refreshLoop();

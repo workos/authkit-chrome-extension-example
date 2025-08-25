@@ -1,14 +1,12 @@
 import { authkit } from '../../authkit/authkit';
 import { getTokenRefresher } from '../../authkit/tokenRefresher';
 
-console.log('background script loaded');
 
 // Initialize the token refresher for session management
 const tokenRefresher = getTokenRefresher();
 
 // Set up a listener for messages from the content script
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
-  console.log('Received message:', message);
 
   if (message.action === 'terminateSession') {
     handleSessionTermination()
@@ -23,7 +21,6 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
   }
 
   if (message.action === 'sessionActive') {
-    console.log('Session confirmed active by popup - starting token refresh');
     
     // Start token refresh management
     tokenRefresher.startTokenRefresh();
@@ -53,7 +50,6 @@ chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
     // Check if there's a session and start token refresh
     const auth = await authkit.withAuth();
     if (auth.user) {
-      console.log('Session detected on AuthKit-enabled website - starting token refresh');
       
       // Start token refresh management
       tokenRefresher.startTokenRefresh();
@@ -65,7 +61,6 @@ chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
 // Check for existing session on startup
 authkit.withAuth().then(auth => {
   if (auth.user) {
-    console.log('Existing session found on startup - starting token refresh');
     tokenRefresher.startTokenRefresh();
   }
 });

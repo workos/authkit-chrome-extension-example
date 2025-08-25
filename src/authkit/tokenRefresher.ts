@@ -58,7 +58,6 @@ export class TokenRefresher {
       return; // already running
     }
 
-    console.log('Starting token refresh management');
     this.refreshInterval = setInterval(() => this.checkAndRefreshSession(), this.checkIntervalMs);
 
     // Check immediately, same as original SessionManager
@@ -72,7 +71,6 @@ export class TokenRefresher {
     if (this.refreshInterval) {
       clearInterval(this.refreshInterval);
       this.refreshInterval = undefined;
-      console.log('Token refresh management stopped');
     }
   }
 
@@ -86,30 +84,25 @@ export class TokenRefresher {
     }
 
     try {
-      console.log('Checking session status...');
       // Always get fresh session data to ensure we have the latest refresh token
       const auth = await authkit.checkStorageBasedSession();
 
       if (!auth.user) {
-        console.log('No active session found.');
         return;
       }
 
       if (!auth.accessToken) {
-        console.log('No access token available.');
         return;
       }
 
       // Check if token is expiring using our JWT utils
       if (isTokenExpiring(auth.accessToken, this.refreshBufferSeconds)) {
-        console.log('Token expiring soon, refreshing...');
         await this.refreshTokens(auth as SessionData);
       } else {
         const claims = parseJwtClaims(auth.accessToken);
         if (claims?.exp) {
           const currentTime = Math.floor(Date.now() / 1000);
           const timeRemaining = claims.exp - currentTime;
-          console.log(`Token valid for ${Math.floor(timeRemaining / 60)} more minutes`);
         }
       }
     } catch (error) {
@@ -123,14 +116,12 @@ export class TokenRefresher {
    */
   private async refreshTokens(sessionData: SessionData) {
     if (!sessionData.refreshToken) {
-      console.log('Cannot refresh: no refresh token available');
       return;
     }
 
     this.isRefreshing = true;
     
     try {
-      console.log('Refreshing tokens via WorkOS API...');
       
       const response = await fetch('https://api.workos.com/user_management/authenticate', {
         method: 'POST',
@@ -151,7 +142,6 @@ export class TokenRefresher {
 
       const tokenResponse: WorkOSTokenResponse = await response.json();
       
-      console.log('Tokens refreshed successfully');
       
       // Create updated session data with proper field mapping
       // Convert snake_case WorkOS API response to camelCase AuthKit session format
@@ -161,20 +151,20 @@ export class TokenRefresher {
           object: tokenResponse.user.object,
           id: tokenResponse.user.id,
           email: tokenResponse.user.email,
-          emailVerified: tokenResponse.user.email_verified,
-          profilePictureUrl: tokenResponse.user.profile_picture_url,
+          emailVerified: tokenResponse.user.email_verified ?? false,
+          profilePictureUrl: tokenResponse.user.profile_picture_url ?? null,
           firstName: tokenResponse.user.first_name,
           lastName: tokenResponse.user.last_name,
-          lastSignInAt: tokenResponse.user.last_sign_in_at,
+          lastSignInAt: tokenResponse.user.last_sign_in_at ?? null,
           createdAt: tokenResponse.user.created_at,
           updatedAt: tokenResponse.user.updated_at,
-          externalId: tokenResponse.user.external_id || null,
-          metadata: tokenResponse.user.metadata || {},
+          externalId: tokenResponse.user.external_id ?? null,
+          metadata: tokenResponse.user.metadata ?? {},
         },
         accessToken: tokenResponse.access_token,
         refreshToken: tokenResponse.refresh_token,
         claims: parseJwtClaims(tokenResponse.access_token),
-        sessionId: sessionData.sessionId || null,
+        sessionId: sessionData.sessionId,
         impersonator: tokenResponse.impersonator || null,
         source: sessionData.source,
         originalFormat: sessionData.originalFormat,
@@ -185,7 +175,6 @@ export class TokenRefresher {
       // Save the updated session back to the original source
       await this.saveUpdatedSession(updatedSession);
       
-      console.log('Updated session saved successfully');
       
     } catch (error) {
       console.error('Error refreshing tokens:', error);
@@ -236,7 +225,6 @@ export class TokenRefresher {
         if (userString) {
           localStorage.setItem('workos:user', userString);
         }
-        console.log('localStorage updated with refreshed tokens');
       },
       args: [
         sessionData.accessToken,
@@ -260,7 +248,6 @@ export class TokenRefresher {
     }
 
     try {
-      console.log('Sealing session data for cookie update...');
       
       // Prepare session data for sealing (match iron-session format exactly)
       const sessionForSealing = {
@@ -270,12 +257,8 @@ export class TokenRefresher {
         impersonator: sessionData.impersonator,
       };
       
-      // Seal the session using the original format
-      const sealedSession = await sealSession(
-        sessionForSealing, 
-        sessionData.originalFormat,
-        sessionData.originalCookieValue
-      );
+      // Seal the session using iron-session compatible format
+      const sealedSession = await sealSession(sessionForSealing);
       
       // Update the cookie
       await chrome.cookies.set({
@@ -287,17 +270,9 @@ export class TokenRefresher {
         sameSite: 'lax'
       });
       
-      console.log('Cookie updated with refreshed tokens');
-      console.log('Updated cookie format:', sessionData.originalFormat);
       
     } catch (error) {
       console.error('Failed to seal and update cookie:', error);
-      // Fall back to logging for debugging
-      console.log('Cookie update failed - tokens not persisted to cookie');
-      console.log('New tokens available:', {
-        accessToken: sessionData.accessToken.slice(-10),
-        refreshToken: sessionData.refreshToken.slice(-10),
-      });
     }
   }
 }

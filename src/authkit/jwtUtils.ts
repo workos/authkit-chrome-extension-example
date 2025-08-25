@@ -10,7 +10,7 @@ interface JwtClaims {
   sid?: string;
   role?: string;
   permissions?: string[];
-  [key: string]: any;
+  [key: string]: unknown;
 }
 
 /**

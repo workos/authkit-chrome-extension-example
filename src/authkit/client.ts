@@ -17,7 +17,6 @@ export async function createAuthkitClient() {
   // authkit-js requires window object, which isn't available in service workers
   // For service worker context, we'll return a limited client
   if (isServiceWorker()) {
-    console.log('Service worker detected - authkit-js not available in this context');
     return null;
   }
 
@@ -28,16 +27,11 @@ export async function createAuthkitClient() {
     // Try devMode: true to see if this helps with session detection
     devMode: true, // This might help with cookie access in extension context
     // Handle refresh failures by logging them but not redirecting
-    onRefreshFailure: ({ signIn }) => {
-      console.log('Session refresh failed - user needs to re-authenticate on website');
+    onRefreshFailure: () => {
       // Don't auto-redirect in extension context
     },
     // Log refresh events for debugging
-    onRefresh: (response) => {
-      console.log('Session refreshed successfully', { 
-        user: response.user?.email,
-        organizationId: response.organizationId 
-      });
+    onRefresh: () => {
     }
   });
 
