@@ -36,7 +36,6 @@ export interface SessionData {
   [key: string]: unknown;
 }
 
-
 /**
  * Convert base64url to Uint8Array
  */
@@ -52,7 +51,6 @@ function bytesToBase64url(bytes: Uint8Array): string {
   const base64 = btoa(String.fromCharCode.apply(null, Array.from(bytes)));
   return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
 }
-
 
 /**
  * Legacy encrypted session format (reverse engineered from source)
@@ -470,4 +468,3 @@ export async function findAndUnsealSession(): Promise<SessionData | null> {
     };
   }
 }
-
