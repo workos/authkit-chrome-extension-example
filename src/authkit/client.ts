@@ -21,11 +21,6 @@ export async function createAuthkitClient() {
     return null;
   }
 
-  console.log('Creating authkit-js client with config:', {
-    clientId: conf.clientId,
-    redirectUri: conf.redirectUri,
-    devMode: false
-  });
 
   const client = await createClient(conf.clientId, {
     redirectUri: conf.redirectUri,
@@ -46,7 +41,6 @@ export async function createAuthkitClient() {
     }
   });
 
-  console.log('AuthKit client created successfully');
 
   return client;
 }

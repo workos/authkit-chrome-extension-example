@@ -77,7 +77,6 @@ async function generateAuthkitSessionKey(password: string, salt: Uint8Array, ite
  * Exact iron-webcrypto algorithm (reverse engineered from source)
  */
 async function unsealIronSession(sealedData: string): Promise<any> {
-  console.log('🔍 IRON: Using EXACT iron-webcrypto parameters');
   
   // Step 1: Parse version delimiter (iron-session adds ~2)
   const versionDelimiter = '~';
@@ -88,7 +87,6 @@ async function unsealIronSession(sealedData: string): Promise<any> {
     const [seal, versionStr] = sealedData.split(versionDelimiter);
     sealWithoutVersion = seal;
     tokenVersion = versionStr ? parseInt(versionStr, 10) : null;
-    console.log('🔍 IRON: Token version:', tokenVersion);
   }
   
   // Step 2: Parse Iron format - Fe26.2*version*mac*iv*encrypted*expiration*hmacSalt*hmacIv
@@ -156,7 +154,7 @@ async function unsealIronSession(sealedData: string): Promise<any> {
     return sessionData;
     
   } catch (error) {
-    console.error('🔍 IRON: Error with iron-webcrypto algorithm:', error);
+    console.error('Error with iron-webcrypto algorithm:', error);
     throw error;
   }
 }
@@ -246,9 +244,83 @@ export async function unsealSession(sealedData: string): Promise<any> {
 }
 
 /**
+ * Check localStorage for AuthKit React devMode=true sessions
+ */
+async function checkLocalStorageSession(): Promise<any> {
+  try {
+    // Get all tabs that match our domain
+    const tabs = await chrome.tabs.query({
+      url: conf.cookieDomain + "/*"
+    });
+    
+    if (tabs.length === 0) {
+      return null;
+    }
+    
+    // Execute script in the first matching tab to check localStorage
+    const [result] = await chrome.scripting.executeScript({
+      target: { tabId: tabs[0].id! },
+      func: () => {
+        // Check for AuthKit localStorage keys - try both formats
+        const refreshToken = localStorage.getItem('workos:refresh-token') || localStorage.getItem('workos.refresh_token');
+        const accessToken = localStorage.getItem('workos:access-token') || localStorage.getItem('workos.access_token');
+        const userString = localStorage.getItem('workos:user') || localStorage.getItem('workos.user');
+        const impersonatorString = localStorage.getItem('workos:impersonator') || localStorage.getItem('workos.impersonator');
+        
+        // If we have at least a refresh token, we can work with that
+        if (!refreshToken && !accessToken && !userString) {
+          return null;
+        }
+        
+        let user = null;
+        let impersonator = null;
+        
+        try {
+          if (userString) {
+            user = JSON.parse(userString);
+          }
+        } catch (e) {
+          // Silently ignore parse errors
+        }
+        
+        try {
+          if (impersonatorString) {
+            impersonator = JSON.parse(impersonatorString);
+          }
+        } catch (e) {
+          // Silently ignore parse errors
+        }
+        
+        return {
+          user,
+          accessToken,
+          refreshToken,
+          impersonator,
+          sessionId: null,
+          claims: null,
+          source: 'localStorage'
+        };
+      }
+    });
+    
+    return result?.result || null;
+  } catch (error) {
+    console.warn('Failed to check localStorage for session:', error);
+    return null;
+  }
+}
+
+/**
  * Try different cookie name patterns and unseal if found
  */
 export async function findAndUnsealSession(): Promise<any> {
+  // First, try to get session from localStorage (AuthKit React devMode=true)
+  const localStorageSession = await checkLocalStorageSession();
+  if (localStorageSession) {
+    return localStorageSession;
+  }
+  
+  // Fallback to cookie-based session detection
   const cookies = await chrome.cookies.getAll({
     url: conf.cookieDomain
   });

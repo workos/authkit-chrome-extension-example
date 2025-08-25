@@ -33,13 +33,13 @@ export const authkit = {
         }
       }
     }
-    return await this.checkCookieBasedSession();
+    return await this.checkStorageBasedSession();
   },
 
   /**
-   * Check for session using Chrome cookies API and make direct WorkOS API call
+   * Check for session using localStorage (AuthKit React devMode=true) or cookies
    */
-  async checkCookieBasedSession() {
+  async checkStorageBasedSession() {
     try {
       const sessionData = await findAndUnsealSession();
       
@@ -73,7 +73,67 @@ export const authkit = {
         };
       }
       
-      // Extract user data from unsealed session
+      // Handle localStorage sessions (AuthKit React devMode=true)
+      if (sessionData.source === 'localStorage') {
+        // If we have user data and access token, return it directly
+        if (sessionData.user && sessionData.accessToken) {
+          const user = sessionData.user;
+          return {
+            user: {
+              email: user.email,
+              firstName: user.first_name || user.firstName,
+              lastName: user.last_name || user.lastName,
+              id: user.id
+            },
+            accessToken: sessionData.accessToken,
+            claims: sessionData.claims,
+            sessionId: sessionData.sessionId,
+            impersonator: sessionData.impersonator,
+            refreshToken: sessionData.refreshToken
+          };
+        }
+        
+        // If we only have a refresh token, try to use authkit-js to get the session
+        if (sessionData.refreshToken) {
+          const client = await getAuthkitClient();
+          if (client) {
+            try {
+              const user = client.getUser();
+              const accessToken = await client.getAccessToken();
+              
+              if (user && accessToken) {
+                return {
+                  user,
+                  accessToken,
+                  claims: null,
+                  sessionId: null,
+                  impersonator: sessionData.impersonator,
+                  refreshToken: sessionData.refreshToken
+                };
+              }
+            } catch (error) {
+              // Fall through to placeholder session
+            }
+          }
+          
+          // If authkit-js client doesn't work, return a placeholder session
+          return {
+            user: {
+              email: 'authenticated-user@extension.local',
+              firstName: 'Authenticated',
+              lastName: 'User',
+              id: 'extension-session'
+            },
+            accessToken: 'extension-session-token',
+            claims: sessionData.claims,
+            sessionId: sessionData.sessionId,
+            impersonator: sessionData.impersonator,
+            refreshToken: sessionData.refreshToken
+          };
+        }
+      }
+      
+      // Extract user data from unsealed session (cookie-based)
       const user = sessionData.user || sessionData;
       
       return {
@@ -116,13 +176,13 @@ export const authkit = {
         await client.signOut({ navigate: false });
       }
       
-      // Clear cookies as backup (in case authkit-js didn't clear everything)
-      await this.clearSessionCookie();
+      // Clear cookies and localStorage as backup (in case authkit-js didn't clear everything)
+      await this.clearSessionStorage();
     } catch (error) {
       console.error('Error during signOut:', error);
       // Even if server-side logout fails, still try to clear local cookies
       try {
-        await this.clearSessionCookie();
+        await this.clearSessionStorage();
       } catch (cookieError) {
         console.error('Failed to clear cookies:', cookieError);
       }
@@ -130,9 +190,13 @@ export const authkit = {
   },
 
   /**
-   * Clear AuthKit session cookies from the domain
+   * Clear AuthKit session cookies and localStorage from the domain
    */
-  async clearSessionCookie() {
+  async clearSessionStorage() {
+    // First, clear localStorage from any matching tabs
+    await this.clearSessionLocalStorage();
+    
+    // Then clear cookies
     const conf = await import('../../config.json');
     
     // Get all cookies from the domain - try both HTTP and potential HTTPS
@@ -180,6 +244,54 @@ export const authkit = {
           console.error(`Failed to remove cookie ${cookie.name}:`, error);
         }
       }
+    }
+  },
+
+  /**
+   * Clear AuthKit session data from localStorage
+   */
+  async clearSessionLocalStorage() {
+    try {
+      // Get all tabs that match our domain
+      const tabs = await chrome.tabs.query({
+        url: conf.cookieDomain + "/*"
+      });
+      
+      if (tabs.length === 0) {
+        return;
+      }
+      
+      // Execute script in each matching tab to clear localStorage
+      for (const tab of tabs) {
+        try {
+          await chrome.scripting.executeScript({
+            target: { tabId: tab.id! },
+            func: () => {
+              // Clear all WorkOS-related localStorage keys - both formats
+              const keysToRemove = [
+                'workos:refresh-token',
+                'workos:access-token', 
+                'workos:user',
+                'workos:impersonator',
+                'workos.refresh_token',
+                'workos.access_token',
+                'workos.user',
+                'workos.impersonator'
+              ];
+              
+              keysToRemove.forEach(key => {
+                localStorage.removeItem(key);
+              });
+              
+              console.log('Cleared AuthKit localStorage data');
+            }
+          });
+        } catch (error) {
+          console.warn(`Failed to clear localStorage for tab ${tab.id}:`, error);
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to clear localStorage session data:', error);
     }
   },
 

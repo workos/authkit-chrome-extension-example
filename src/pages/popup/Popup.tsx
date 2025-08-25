@@ -22,7 +22,6 @@ export default function Popup() {
   }, []);
 
   const checkSessionStatus = async () => {
-    console.log('🔍 POPUP: Starting session check...');
     setLoading(true);
     try {
       // Debug: Check what cookies are available
@@ -36,17 +35,10 @@ export default function Popup() {
         value: c.value.substring(0, 20) + '...' 
       })));
 
-      console.log('🔄 POPUP: Calling authkit.withAuth()...');
       const auth = await authkit.withAuth();
-      console.log('✅ POPUP: Auth result:', { 
-        hasUser: !!auth.user, 
-        userEmail: auth.user?.email,
-        hasAccessToken: !!auth.accessToken 
-      });
 
       // If we have a session, notify the service worker
       if (auth.user && auth.accessToken) {
-        console.log('📤 POPUP: Notifying service worker of active session');
         chrome.runtime.sendMessage({
           action: 'sessionActive',
           user: auth.user,
@@ -55,7 +47,6 @@ export default function Popup() {
           console.error('❌ POPUP: Failed to notify service worker:', error);
         });
       } else {
-        console.log('❌ POPUP: No active session found');
       }
 
       setStatus({
@@ -70,7 +61,6 @@ export default function Popup() {
       setStatus({ isAuthenticated: false });
     } finally {
       setLoading(false);
-      console.log('🏁 POPUP: Session check complete');
     }
   };
 
