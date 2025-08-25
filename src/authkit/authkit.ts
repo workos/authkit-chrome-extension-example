@@ -1,5 +1,5 @@
 import { getAuthkitClient } from './client';
-import { findAndUnsealSession } from './sessionUnseal';
+import { findAndUnsealSession } from './session';
 import conf from '../../config.json';
 
 /**
@@ -90,7 +90,8 @@ export const authkit = {
             claims: sessionData.claims,
             sessionId: sessionData.sessionId,
             impersonator: sessionData.impersonator,
-            refreshToken: sessionData.refreshToken
+            refreshToken: sessionData.refreshToken,
+            source: sessionData.source
           };
         }
         
@@ -129,7 +130,8 @@ export const authkit = {
             claims: sessionData.claims,
             sessionId: sessionData.sessionId,
             impersonator: sessionData.impersonator,
-            refreshToken: sessionData.refreshToken
+            refreshToken: sessionData.refreshToken,
+            source: sessionData.source
           };
         }
       }
@@ -148,7 +150,11 @@ export const authkit = {
         claims: sessionData.claims || null,
         sessionId: sessionData.session_id || sessionData.sessionId,
         impersonator: sessionData.impersonator || null,
-        refreshToken: sessionData.refresh_token || sessionData.refreshToken
+        refreshToken: sessionData.refresh_token || sessionData.refreshToken,
+        source: sessionData.source,
+        originalFormat: sessionData.originalFormat,
+        cookieName: sessionData.cookieName,
+        originalCookieValue: sessionData.originalCookieValue
       };
       
     } catch (error) {

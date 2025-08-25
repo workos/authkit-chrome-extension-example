@@ -1,5 +1,6 @@
 import { authkit } from './authkit';
 import { isTokenExpiring, parseJwtClaims } from './jwtUtils';
+import { sealSession } from './session';
 import conf from '../../config.json';
 
 interface SessionData {
@@ -10,6 +11,24 @@ interface SessionData {
   sessionId?: string;
   impersonator?: any;
   source?: 'localStorage' | 'cookie';
+  originalFormat?: string;
+  cookieName?: string;
+  originalCookieValue?: string;
+}
+
+interface WorkOSUserResponse {
+  object: 'user';
+  id: string;
+  email: string;
+  email_verified: boolean;
+  profile_picture_url: string | null;
+  first_name: string | null;
+  last_name: string | null;
+  last_sign_in_at: string | null;
+  created_at: string;
+  updated_at: string;
+  external_id?: string;
+  metadata?: Record<string, string>;
 }
 
 interface WorkOSTokenResponse {
@@ -17,7 +36,7 @@ interface WorkOSTokenResponse {
   refresh_token: string;
   token_type: string;
   expires_in: number;
-  user: any;
+  user: WorkOSUserResponse;
   impersonator?: any;
 }
 
@@ -134,15 +153,33 @@ export class TokenRefresher {
       
       console.log('Tokens refreshed successfully');
       
-      // Create updated session data
+      // Create updated session data with proper field mapping
+      // Convert snake_case WorkOS API response to camelCase AuthKit session format
       const updatedSession = {
-        user: tokenResponse.user,
+        user: {
+          // Map snake_case API response to camelCase session format
+          object: tokenResponse.user.object,
+          id: tokenResponse.user.id,
+          email: tokenResponse.user.email,
+          emailVerified: tokenResponse.user.email_verified,
+          profilePictureUrl: tokenResponse.user.profile_picture_url,
+          firstName: tokenResponse.user.first_name,
+          lastName: tokenResponse.user.last_name,
+          lastSignInAt: tokenResponse.user.last_sign_in_at,
+          createdAt: tokenResponse.user.created_at,
+          updatedAt: tokenResponse.user.updated_at,
+          externalId: tokenResponse.user.external_id || null,
+          metadata: tokenResponse.user.metadata || {},
+        },
         accessToken: tokenResponse.access_token,
         refreshToken: tokenResponse.refresh_token,
         claims: parseJwtClaims(tokenResponse.access_token),
-        sessionId: sessionData.sessionId,
-        impersonator: tokenResponse.impersonator,
+        sessionId: sessionData.sessionId || null,
+        impersonator: tokenResponse.impersonator || null,
         source: sessionData.source,
+        originalFormat: sessionData.originalFormat,
+        cookieName: sessionData.cookieName,
+        originalCookieValue: sessionData.originalCookieValue,
       };
 
       // Save the updated session back to the original source
@@ -211,16 +248,57 @@ export class TokenRefresher {
 
   /**
    * Save session data to cookies (for AuthKit Next.js and other cookie-based sessions)
-   * This is more complex as we need to re-encrypt the session data
    */
   private async saveToCookies(sessionData: SessionData) {
-    // For now, just log - cookie encryption is complex
-    // TODO: Implement cookie re-encryption using iron-session or similar
-    console.log('Cookie update needed but not yet implemented');
-    console.log('New tokens available:', {
-      accessToken: sessionData.accessToken.slice(-10),
-      refreshToken: sessionData.refreshToken.slice(-10),
-    });
+    if (!sessionData.cookieName || !sessionData.originalFormat) {
+      console.warn('Missing cookie metadata for sealing - cannot update cookie');
+      console.log('New tokens available:', {
+        accessToken: sessionData.accessToken.slice(-10),
+        refreshToken: sessionData.refreshToken.slice(-10),
+      });
+      return;
+    }
+
+    try {
+      console.log('Sealing session data for cookie update...');
+      
+      // Prepare session data for sealing (match iron-session format exactly)
+      const sessionForSealing = {
+        accessToken: sessionData.accessToken,  // camelCase, not snake_case
+        refreshToken: sessionData.refreshToken, // camelCase, not snake_case
+        user: sessionData.user,
+        impersonator: sessionData.impersonator,
+      };
+      
+      // Seal the session using the original format
+      const sealedSession = await sealSession(
+        sessionForSealing, 
+        sessionData.originalFormat,
+        sessionData.originalCookieValue
+      );
+      
+      // Update the cookie
+      await chrome.cookies.set({
+        url: conf.cookieDomain,
+        name: sessionData.cookieName,
+        value: sealedSession,
+        httpOnly: true,
+        secure: conf.cookieDomain.startsWith('https:'),
+        sameSite: 'lax'
+      });
+      
+      console.log('Cookie updated with refreshed tokens');
+      console.log('Updated cookie format:', sessionData.originalFormat);
+      
+    } catch (error) {
+      console.error('Failed to seal and update cookie:', error);
+      // Fall back to logging for debugging
+      console.log('Cookie update failed - tokens not persisted to cookie');
+      console.log('New tokens available:', {
+        accessToken: sessionData.accessToken.slice(-10),
+        refreshToken: sessionData.refreshToken.slice(-10),
+      });
+    }
   }
 }
 

@@ -7,12 +7,12 @@ interface SealedSession {
 }
 
 /**
- * Generate Iron-specific key using exact Iron algorithm
+ * Generate legacy key using legacy session algorithm
  */
-async function generateIronKey(password: string, salt: string, algorithm: string, iterations: number = 1000): Promise<CryptoKey> {
+async function generateLegacyKey(password: string, salt: string, algorithm: string, iterations: number = 1000): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   
-  // Iron constructs salt as: algorithm + "**" + salt + "**" + usage
+  // Legacy format constructs salt as: algorithm + "**" + salt + "**" + usage
   const fullSalt = encoder.encode(algorithm + '**' + salt + '**' + 'encryption');
   
   const keyMaterial = await crypto.subtle.importKey(
@@ -33,7 +33,7 @@ async function generateIronKey(password: string, salt: string, algorithm: string
     keyMaterial,
     { name: 'AES-CBC', length: 256 },
     false,
-    ['decrypt']
+    ['decrypt', 'encrypt']
   );
 }
 
@@ -46,9 +46,17 @@ function base64urlToBytes(base64url: string): Uint8Array {
 }
 
 /**
- * Generate authkit-session compatible encryption key
+ * Convert Uint8Array to base64url
  */
-async function generateAuthkitSessionKey(password: string, salt: Uint8Array, iterations: number = 1): Promise<CryptoKey> {
+function bytesToBase64url(bytes: Uint8Array): string {
+  const base64 = btoa(String.fromCharCode(...bytes));
+  return base64.replace(/\+/g, '-').replace(/\//g, '_').replace(/=/g, '');
+}
+
+/**
+ * Generate session encryption key
+ */
+async function generateSessionKey(password: string, salt: Uint8Array, iterations: number = 1): Promise<CryptoKey> {
   const encoder = new TextEncoder();
   
   const keyMaterial = await crypto.subtle.importKey(
@@ -69,14 +77,14 @@ async function generateAuthkitSessionKey(password: string, salt: Uint8Array, ite
     keyMaterial,
     { name: 'AES-CBC', length: 256 },
     false,
-    ['decrypt']
+    ['decrypt', 'encrypt']
   );
 }
 
 /**
- * Exact iron-webcrypto algorithm (reverse engineered from source)
+ * Legacy encrypted session format (reverse engineered from source)
  */
-async function unsealIronSession(sealedData: string): Promise<any> {
+async function unsealLegacyFormat(sealedData: string): Promise<any> {
   
   // Step 1: Parse version delimiter (iron-session adds ~2)
   const versionDelimiter = '~';
@@ -89,11 +97,11 @@ async function unsealIronSession(sealedData: string): Promise<any> {
     tokenVersion = versionStr ? parseInt(versionStr, 10) : null;
   }
   
-  // Step 2: Parse Iron format - Fe26.2*version*mac*iv*encrypted*expiration*hmacSalt*hmacIv
+  // Step 2: Parse legacy format - Fe26.2*version*mac*iv*encrypted*expiration*hmacSalt*hmacIv
   const parts = sealWithoutVersion.split('*');
   
   if (parts.length < 6 || !parts[0].startsWith('Fe26.2')) {
-    throw new Error('Invalid Iron sealed data format');
+    throw new Error('Invalid legacy sealed data format');
   }
   
   const [prefix, passwordId, encryptionSalt, encryptionIv, encryptedB64, expiration, hmacSalt, hmacIv] = parts;
@@ -154,7 +162,7 @@ async function unsealIronSession(sealedData: string): Promise<any> {
     return sessionData;
     
   } catch (error) {
-    console.error('Error with iron-webcrypto algorithm:', error);
+    console.error('Error with legacy session algorithm:', error);
     throw error;
   }
 }
@@ -164,9 +172,9 @@ async function unsealIronSession(sealedData: string): Promise<any> {
  */
 export async function unsealSession(sealedData: string): Promise<any> {
   try {
-    // Check if this is an Iron sealed session
+    // Check if this is a legacy sealed session
     if (sealedData.startsWith('Fe26.2')) {
-      return await unsealIronSession(sealedData);
+      return await unsealLegacyFormat(sealedData);
     }
     
     // Try different cookie formats (original logic for other formats)
@@ -241,6 +249,198 @@ export async function unsealSession(sealedData: string): Promise<any> {
   } catch (error) {
     throw error;
   }
+}
+
+/**
+ * Seal session data back into encrypted cookie format
+ */
+export async function sealSession(sessionData: any, format?: string, originalCookieValue?: string): Promise<string> {
+  try {
+    // Determine format from original cookie if not specified
+    if (!format && originalCookieValue) {
+      if (originalCookieValue.startsWith('Fe26.2')) {
+        format = 'legacy';
+      } else if (originalCookieValue.includes('encrypted')) {
+        format = 'standard';
+      } else {
+        format = 'json';
+      }
+    }
+
+    // Default to legacy format if unknown
+    format = format || 'legacy';
+
+    if (format === 'legacy') {
+      return await sealLegacyFormat(sessionData);
+    } else if (format === 'standard') {
+      return await sealStandardFormat(sessionData);
+    } else {
+      // Simple base64 JSON format
+      return btoa(JSON.stringify(sessionData));
+    }
+  } catch (error) {
+    console.error('Error sealing session:', error);
+    throw error;
+  }
+}
+
+/**
+ * Seal session data using legacy format (Fe26.2) - iron-session compatible
+ */
+async function sealLegacyFormat(sessionData: any): Promise<string> {
+  const password = conf.cookiePassword;
+  const jsonString = JSON.stringify(sessionData);
+  
+  // Generate random 32-byte salts (matching iron-session)
+  const encryptionSalt = crypto.getRandomValues(new Uint8Array(32));
+  const hmacSalt = crypto.getRandomValues(new Uint8Array(32));
+  const encryptionIv = crypto.getRandomValues(new Uint8Array(16));
+  const hmacIv = crypto.getRandomValues(new Uint8Array(16));
+  
+  // Convert salts to hex (iron-session format)
+  const encryptionSaltHex = Array.from(encryptionSalt).map(b => b.toString(16).padStart(2, '0')).join('');
+  const hmacSaltHex = Array.from(hmacSalt).map(b => b.toString(16).padStart(2, '0')).join('');
+  
+  // Derive encryption key using PBKDF2 (iron-session parameters)
+  const encryptionKeyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  
+  const encryptionKeyBits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: new TextEncoder().encode(encryptionSaltHex),
+      iterations: 1,
+      hash: 'SHA-1'
+    },
+    encryptionKeyMaterial,
+    256
+  );
+  
+  const encryptionKey = await crypto.subtle.importKey(
+    'raw',
+    encryptionKeyBits,
+    { name: 'AES-CBC' },
+    false,
+    ['encrypt']
+  );
+  
+  // Encrypt the JSON string
+  const encryptedBuffer = await crypto.subtle.encrypt(
+    { 
+      name: 'AES-CBC', 
+      iv: encryptionIv 
+    },
+    encryptionKey,
+    new TextEncoder().encode(jsonString)
+  );
+  
+  // Convert to base64url (iron-session format)
+  const encryptedB64 = bytesToBase64url(new Uint8Array(encryptedBuffer));
+  const encryptionIvB64 = bytesToBase64url(encryptionIv);
+  const hmacIvB64 = bytesToBase64url(hmacIv);
+  
+  // Create the unsigned data for HMAC - USE MILLISECONDS like iron-session!
+  const expiration = Date.now() + (24 * 60 * 60 * 1000); // 24 hours in milliseconds
+  const unsignedData = `Fe26.2*1*${encryptionSaltHex}*${encryptionIvB64}*${encryptedB64}*${expiration}`;
+  
+  // Derive HMAC key
+  const hmacKeyMaterial = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveBits']
+  );
+  
+  const hmacKeyBits = await crypto.subtle.deriveBits(
+    {
+      name: 'PBKDF2',
+      salt: new TextEncoder().encode(hmacSaltHex),
+      iterations: 1,
+      hash: 'SHA-1'
+    },
+    hmacKeyMaterial,
+    256
+  );
+  
+  const hmacKey = await crypto.subtle.importKey(
+    'raw',
+    hmacKeyBits,
+    { name: 'HMAC', hash: 'SHA-256' },
+    false,
+    ['sign']
+  );
+  
+  // Calculate HMAC signature
+  const signature = await crypto.subtle.sign(
+    'HMAC',
+    hmacKey,
+    new TextEncoder().encode(unsignedData)
+  );
+  
+  const signatureB64 = bytesToBase64url(new Uint8Array(signature));
+  
+  // Build iron-session format string (8 parts total, signature as part 7)
+  // Format: Fe26.2*passwordId*encryptionSalt*encryptionIv*encrypted*expiration*hmacSalt*signature
+  const sealed = `Fe26.2*1*${encryptionSaltHex}*${encryptionIvB64}*${encryptedB64}*${expiration}*${hmacSaltHex}*${signatureB64}`;
+  
+  // Add version suffix for compatibility
+  return `${sealed}~2`;
+}
+
+/**
+ * Seal session data using standard AES-GCM format
+ */
+async function sealStandardFormat(sessionData: any): Promise<string> {
+  const password = conf.cookiePassword;
+  const jsonString = JSON.stringify(sessionData);
+  
+  // Generate random salt and IV
+  const salt = crypto.getRandomValues(new Uint8Array(16));
+  const iv = crypto.getRandomValues(new Uint8Array(12)); // AES-GCM uses 12-byte IV
+  
+  // Derive key using PBKDF2
+  const passwordKey = await crypto.subtle.importKey(
+    'raw',
+    new TextEncoder().encode(password),
+    'PBKDF2',
+    false,
+    ['deriveKey']
+  );
+  
+  const derivedKey = await crypto.subtle.deriveKey(
+    {
+      name: 'PBKDF2',
+      salt: salt,
+      iterations: 100000,
+      hash: 'SHA-256'
+    },
+    passwordKey,
+    { name: 'AES-GCM', length: 256 },
+    false,
+    ['encrypt']
+  );
+  
+  // Encrypt the data
+  const encrypted = await crypto.subtle.encrypt(
+    { name: 'AES-GCM', iv: iv },
+    derivedKey,
+    new TextEncoder().encode(jsonString)
+  );
+  
+  // Encode everything as base64
+  const sealedData = {
+    encrypted: btoa(String.fromCharCode(...new Uint8Array(encrypted))),
+    iv: btoa(String.fromCharCode(...iv)),
+    salt: btoa(String.fromCharCode(...salt))
+  };
+  
+  return btoa(JSON.stringify(sealedData));
 }
 
 /**
@@ -336,7 +536,14 @@ export async function findAndUnsealSession(): Promise<any> {
   }
   
   try {
-    if (sessionCookie.value.includes('.')) {
+    // Determine session format for later sealing
+    let originalFormat = 'unknown';
+    let originalCookieValue = sessionCookie.value;
+    
+    if (sessionCookie.value.startsWith('Fe26.2')) {
+      originalFormat = 'legacy';
+    } else if (sessionCookie.value.includes('.')) {
+      // JWT or similar format - try parsing
       const parts = sessionCookie.value.split('.');
       if (parts.length >= 2) {
         // Try to decode the payload part (usually the second part in a JWT)
@@ -348,21 +555,52 @@ export async function findAndUnsealSession(): Promise<any> {
             const decoded = JSON.parse(atob(padded.replace(/-/g, '+').replace(/_/g, '/')));
             
             if (decoded && (decoded.user || decoded.email || decoded.id)) {
-              return decoded;
+              return {
+                ...decoded,
+                originalFormat: 'jwt',
+                cookieName: sessionCookie.name,
+                originalCookieValue,
+                source: 'cookie'
+              };
             }
           } catch (partError) {
             // Continue trying other parts
           }
         }
       }
+      originalFormat = 'jwt';
+    } else {
+      // Try to detect if it's base64 JSON or encrypted
+      try {
+        JSON.parse(sessionCookie.value);
+        originalFormat = 'json';
+      } catch {
+        try {
+          JSON.parse(atob(sessionCookie.value));
+          originalFormat = 'standard';
+        } catch {
+          originalFormat = 'standard'; // Assume encrypted
+        }
+      }
     }
     
     const sessionData = await unsealSession(sessionCookie.value);
-    return sessionData;
+    
+    // Add metadata for sealing
+    return {
+      ...sessionData,
+      originalFormat,
+      cookieName: sessionCookie.name,
+      originalCookieValue,
+      source: 'cookie'
+    };
   } catch (error) {
     return {
       sessionDetected: true,
       cookieName: sessionCookie.name,
+      originalFormat: 'unknown',
+      originalCookieValue: sessionCookie.value,
+      source: 'cookie',
       error: error.message
     };
   }
