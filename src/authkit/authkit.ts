@@ -1,5 +1,6 @@
 import { getAuthkitClient } from './client';
 import { findAndUnsealSession } from './sessionUnseal';
+import conf from '../../config.json';
 
 /**
  * AuthKit interface for Chrome extension.
