@@ -22,41 +22,71 @@ export default function Popup() {
   }, []);
 
   const checkSessionStatus = async () => {
+    console.log('🔍 POPUP: Starting session check...');
     setLoading(true);
     try {
-      const auth = await authkit.withAuth();
+      // Debug: Check what cookies are available
+      const cookies = await chrome.cookies.getAll({
+        url: 'http://localhost:3000'
+      });
+      console.log('🍪 POPUP: Available cookies:', cookies.map(c => ({ 
+        name: c.name, 
+        domain: c.domain,
+        httpOnly: c.httpOnly,
+        value: c.value.substring(0, 20) + '...' 
+      })));
 
-      let expiresIn: number | undefined;
-      if (auth.claims?.exp) {
-        const currentTime = Math.floor(Date.now() / 1000);
-        expiresIn = auth.claims.exp - currentTime;
+      console.log('🔄 POPUP: Calling authkit.withAuth()...');
+      const auth = await authkit.withAuth();
+      console.log('✅ POPUP: Auth result:', { 
+        hasUser: !!auth.user, 
+        userEmail: auth.user?.email,
+        hasAccessToken: !!auth.accessToken 
+      });
+
+      // If we have a session, notify the service worker
+      if (auth.user && auth.accessToken) {
+        console.log('📤 POPUP: Notifying service worker of active session');
+        chrome.runtime.sendMessage({
+          action: 'sessionActive',
+          user: auth.user,
+          hasAccessToken: true
+        }).catch((error) => {
+          console.error('❌ POPUP: Failed to notify service worker:', error);
+        });
+      } else {
+        console.log('❌ POPUP: No active session found');
       }
 
       setStatus({
         isAuthenticated: !!auth.user,
         user: auth.user,
-        expiresIn,
+        // Note: authkit-js doesn't expose token expiration directly
+        // The client handles automatic refresh internally
+        expiresIn: undefined,
       });
     } catch (error) {
-      console.error('Error checking session:', error);
+      console.error('💥 POPUP: Error checking session:', error);
       setStatus({ isAuthenticated: false });
     } finally {
       setLoading(false);
+      console.log('🏁 POPUP: Session check complete');
     }
   };
 
   const handleLogout = async () => {
     setLoggingOut(true);
     try {
-      // We need the full session to terminate it
+      // Get current session before terminating
       const auth = await authkit.withAuth();
 
-      if (auth.user && auth.accessToken) {
-        // This is a simplified example - in reality, you'll need to implement a message
-        // to the background script to handle session termination correctly
+      if (auth.user) {
+        // Call authkit's signOut method to properly clear all cookies
+        await authkit.signOut(auth);
+
+        // Also notify background script to stop maintenance
         await chrome.runtime.sendMessage({
           action: 'terminateSession',
-          accessToken: auth.accessToken,
         });
 
         // Reset status after logout

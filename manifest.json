@@ -12,7 +12,7 @@
   "icons": {
     "128": "icon-128.png"
   },
-  "permissions": ["activeTab", "cookies", "tabs"],
+  "permissions": ["activeTab", "cookies", "tabs", "scripting"],
   "host_permissions": ["http://localhost/*", "http://localhost:3000/*", "https://api.workos.com/*"],
   "web_accessible_resources": [
     {

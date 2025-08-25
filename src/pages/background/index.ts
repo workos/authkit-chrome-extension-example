@@ -1,8 +1,13 @@
 import { authkit } from '../../authkit/authkit';
-import { sessionManager } from '../../authkit/sessionManager';
+import { getServiceWorkerClient } from '../../authkit/serviceWorkerClient';
 
 console.log('background script loaded');
-sessionManager.startSessionManagement();
+
+// Initialize the service worker client for session management
+const swClient = getServiceWorkerClient();
+
+// Start periodic session refresh for phone call use case
+let stopPeriodicRefresh: (() => void) | null = null;
 
 // Set up a listener for messages from the content script
 chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
@@ -19,59 +24,88 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     // Return true to indicate that sendResponse will be called asynchronously
     return true;
   }
+
+  if (message.action === 'sessionActive') {
+    console.log('Session confirmed active by popup - phone call maintenance active');
+    
+    // Stop existing refresh if running
+    if (stopPeriodicRefresh) {
+      stopPeriodicRefresh();
+    }
+    
+    // Start simplified phone call maintenance (no API refresh needed)
+    stopPeriodicRefresh = startPhoneCallMaintenance();
+    
+    sendResponse({ success: true });
+    return true;
+  }
 });
 
 async function handleSessionTermination() {
   try {
-    // Get the full authentication state
-    const { user, accessToken, refreshToken } = await authkit.withAuth(void 0);
-
-    if (!user || !accessToken || !refreshToken) {
-      console.log('No active session to terminate');
-      return;
+    // Stop the periodic refresh
+    if (stopPeriodicRefresh) {
+      stopPeriodicRefresh();
+      stopPeriodicRefresh = null;
     }
 
-    await chrome.cookies.remove({
-      name: 'wos-session',
-      url: 'http://localhost:3000',
-    });
+    // Use authkit's comprehensive cookie clearing method
+    await authkit.clearSessionCookie();
 
-    console.log('Session terminated successfully');
-
-    // Stop the session management
-    if (sessionManager) {
-      sessionManager.stopSessionManagement();
-      try {
-        const { logoutUrl } = await authkit.getLogoutUrl({ user, accessToken, refreshToken }, void 0);
-        // officially end the session on the server
-        await fetch(logoutUrl, {
-          method: 'GET',
-          mode: 'no-cors',
-          credentials: 'include',
-        });
-      } catch {
-        // don't throw if this fails
-      }
-    }
   } catch (error) {
     console.error('Error during session termination:', error);
     throw error;
   }
 }
 
-// Listen for when a tab is updated (page loaded)
+// Listen for when a tab is updated (page loaded) to detect new sessions
 chrome.tabs.onUpdated.addListener(async (_tabId, changeInfo, tab) => {
   if (tab.url?.includes('localhost:3000') && changeInfo.status === 'complete') {
-    const auth = await authkit.withAuth(void 0);
-    // console.log('AUTH', auth);
-
-    if (auth.user) {
-      sessionManager.startSessionManagement();
+    // Check if there's a session and start phone call maintenance
+    if (await swClient.hasActiveSession()) {
+      console.log('Session detected on AuthKit-enabled website - starting phone call maintenance');
+      
+      // Stop existing maintenance if running
+      if (stopPeriodicRefresh) {
+        stopPeriodicRefresh();
+      }
+      
+      // Start new phone call maintenance
+      stopPeriodicRefresh = startPhoneCallMaintenance();
     }
   }
 });
 
-// Also check when extension icon is clicked
-chrome.action.onClicked.addListener(() => {
-  sessionManager.startSessionManagement();
+// Simplified phone call maintenance that doesn't try to refresh tokens
+function startPhoneCallMaintenance(): () => void {
+  console.log('Starting phone call maintenance...');
+  
+  const intervalId = setInterval(async () => {
+    // Check if session cookies still exist
+    if (await swClient.hasActiveSession()) {
+      console.log('Phone call maintenance ping - session active');
+      // Here you would make your phone service API call
+      // await fetch('/api/phone/keep-alive', { ... });
+    } else {
+      console.log('Session expired - phone call maintenance stopped');
+      if (stopPeriodicRefresh) {
+        stopPeriodicRefresh();
+        stopPeriodicRefresh = null;
+      }
+    }
+  }, 30000); // Every 30 seconds
+
+  // Return cleanup function
+  return () => {
+    clearInterval(intervalId);
+    console.log('Phone call maintenance stopped');
+  };
+}
+
+// Check for existing session on startup
+swClient.hasActiveSession().then(hasSession => {
+  if (hasSession) {
+    console.log('Existing session found on startup - starting phone call maintenance');
+    stopPeriodicRefresh = startPhoneCallMaintenance();
+  }
 });

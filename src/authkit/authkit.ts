@@ -1,73 +1,208 @@
-import { type AuthKitConfig, SessionStorage, configure, createAuthKitFactory } from '@workos-inc/authkit-ssr';
-import { WebSessionEncryption } from './WebSessionEncryption';
-import conf from '../../config.json';
-import getWorkOS from './workosLite';
+import { getAuthkitClient } from './client';
+import { findAndUnsealSession } from './sessionUnseal';
 
 /**
- * A session storage implementation that uses Chrome's cookie storage.
- * This lets the authkit library know how to read and write the session cookie
- * using Chrome's cookie API.
+ * AuthKit interface for Chrome extension.
+ * Provides a simplified API that wraps authkit-js client.
  */
-class ChromeExtensionStorage implements SessionStorage<void, void> {
-  cookieName: string;
-  domain: string;
-
-  constructor(domain: string, cookeName = 'wos-session') {
-    this.cookieName = cookeName;
-    this.domain = domain;
-  }
+export const authkit = {
+  /**
+   * Get current authentication status and user information.
+   * @returns Authentication result with user data if authenticated
+   */
+  async withAuth() {
+    const client = await getAuthkitClient();
+    
+    if (client) {
+      const user = client.getUser();
+      
+      if (user) {
+        try {
+          const accessToken = await client.getAccessToken();
+          
+          return {
+            user,
+            accessToken,
+            claims: null,
+            sessionId: null,
+            impersonator: null,
+            refreshToken: null
+          };
+        } catch (error) {
+          // Fall through to cookie-based approach
+        }
+      }
+    }
+    return await this.checkCookieBasedSession();
+  },
 
   /**
-   * Get the session cookie from Chrome's cookie storage.
-   * @returns The session cookie value or null if it doesn't exist.
+   * Check for session using Chrome cookies API and make direct WorkOS API call
    */
-  async getSession(): Promise<string | null> {
-    const cookie = await chrome.cookies.get({
-      name: this.cookieName,
-      url: this.domain,
-    });
-    return cookie?.value ?? null;
-  }
+  async checkCookieBasedSession() {
+    try {
+      const sessionData = await findAndUnsealSession();
+      
+      if (!sessionData) {
+        return {
+          user: null,
+          accessToken: null,
+          claims: null,
+          sessionId: null,
+          impersonator: null,
+          refreshToken: null
+        };
+      }
+      
+      // Check if we got a session detected marker but couldn't decode user data
+      if (sessionData.sessionDetected && !sessionData.user) {
+        
+        // Return placeholder data indicating session exists but details unavailable
+        return {
+          user: {
+            email: `session-detected@${sessionData.cookieName}`,
+            firstName: 'Session',
+            lastName: 'Detected',
+            id: sessionData.cookieName
+          },
+          accessToken: 'session-detected',
+          claims: null,
+          sessionId: sessionData.cookieName,
+          impersonator: null,
+          refreshToken: null
+        };
+      }
+      
+      // Extract user data from unsealed session
+      const user = sessionData.user || sessionData;
+      
+      return {
+        user: {
+          email: user.email,
+          firstName: user.first_name || user.firstName,
+          lastName: user.last_name || user.lastName,
+          id: user.id
+        },
+        accessToken: sessionData.access_token || sessionData.accessToken,
+        claims: sessionData.claims || null,
+        sessionId: sessionData.session_id || sessionData.sessionId,
+        impersonator: sessionData.impersonator || null,
+        refreshToken: sessionData.refresh_token || sessionData.refreshToken
+      };
+      
+    } catch (error) {
+      return {
+        user: null,
+        accessToken: null,
+        claims: null,
+        sessionId: null,
+        impersonator: null,
+        refreshToken: null
+      };
+    }
+  },
 
   /**
-   * Set the session cookie in Chrome's cookie storage.
-   * @param sessionData The session data to be stored.
-   * @returns A promise that resolves when the session is saved.
+   * Sign out and optionally get logout URL.
+   * @param session - Current authentication state  
+   * @param _ - Unused parameter for compatibility
+   * @returns Promise that resolves when logout is complete
    */
-  async saveSession(_: unknown, sessionData: string): Promise<void> {
-    await chrome.cookies.set({
-      name: this.cookieName,
-      url: this.domain,
-      value: sessionData,
-      expirationDate: Date.now() / 1000 + 60 * 60 * 24 * 400, // 400 days
-    });
-  }
+  async signOut(session: any, _?: any) {
+    try {
+      // Use authkit-js to do proper server-side session termination
+      const client = await getAuthkitClient();
+      if (client) {
+        await client.signOut({ navigate: false });
+      }
+      
+      // Clear cookies as backup (in case authkit-js didn't clear everything)
+      await this.clearSessionCookie();
+    } catch (error) {
+      console.error('Error during signOut:', error);
+      // Even if server-side logout fails, still try to clear local cookies
+      try {
+        await this.clearSessionCookie();
+      } catch (cookieError) {
+        console.error('Failed to clear cookies:', cookieError);
+      }
+    }
+  },
 
   /**
-   * Remove the session cookie from Chrome's cookie storage.
-   * @returns A promise that resolves when the session is cleared.
+   * Clear AuthKit session cookies from the domain
    */
-  async clearSession(): Promise<void> {
-    console.log('%cclearSession called.', 'color: red; font-weight: bold;');
-    await chrome.cookies.remove({
-      name: this.cookieName,
-      url: this.domain,
-    });
+  async clearSessionCookie() {
+    const conf = await import('../../config.json');
+    
+    // Get all cookies from the domain - try both HTTP and potential HTTPS
+    const urls = [conf.cookieDomain];
+    if (conf.cookieDomain.startsWith('http://')) {
+      urls.push(conf.cookieDomain.replace('http://', 'https://'));
+    }
+    
+    let allCookies: chrome.cookies.Cookie[] = [];
+    for (const url of urls) {
+      try {
+        const cookies = await chrome.cookies.getAll({ url });
+        allCookies = allCookies.concat(cookies);
+      } catch (error) {
+        // Silently continue if URL doesn't work
+      }
+    }
+    
+    // Also try to get cookies for localhost domain
+    try {
+      const localhostCookies = await chrome.cookies.getAll({ domain: 'localhost' });
+      allCookies = allCookies.concat(localhostCookies);
+    } catch (error) {
+      // Silently continue
+    }
+    
+    // Find and remove AuthKit session cookies
+    for (const cookie of allCookies) {
+      if (cookie.name.includes('wos-session') || 
+          cookie.name.includes('workos') ||
+          cookie.name.includes('session') ||
+          cookie.name === 'authkit-session') {
+        
+        // Construct proper URL for cookie removal
+        const protocol = cookie.secure ? 'https://' : 'http://';
+        const domain = cookie.domain.startsWith('.') ? cookie.domain.substring(1) : cookie.domain;
+        const url = `${protocol}${domain}${cookie.path}`;
+        
+        try {
+          await chrome.cookies.remove({
+            url: url,
+            name: cookie.name
+          });
+        } catch (error) {
+          console.error(`Failed to remove cookie ${cookie.name}:`, error);
+        }
+      }
+    }
+  },
+
+  /**
+   * Get logout URL for session termination (for compatibility).
+   * @param session - Current authentication state
+   * @param _ - Unused parameter for compatibility  
+   * @returns Object containing logout URL
+   */
+  async getLogoutUrl(session: any, _: any) {
+    const client = await getAuthkitClient();
+    
+    if (!client) {
+      console.log('AuthKit client not available for getLogoutUrl');
+      return { logoutUrl: 'about:blank' };
+    }
+    
+    if (session.user) {
+      // For now, we'll perform logout directly since authkit-js doesn't expose URL generation
+      await this.signOut(session);
+      return { logoutUrl: 'about:blank' }; // Placeholder since we don't need the URL
+    }
+    
+    throw new Error('No active session to terminate');
   }
-}
-
-const config = {
-  cookieDomain: 'http://localhost:3000',
-  redirectUri: 'http://localhost:3000/callback',
-  ...conf,
-} satisfies Partial<AuthKitConfig>;
-
-// Configure the authkit library with the provided configuration.
-configure(config);
-
-export const authkit = createAuthKitFactory<void, void>({
-  // use  iron-session campatible encryption that works in the browser / extension environment
-  sessionEncryptionFactory: () => new WebSessionEncryption(),
-  sessionStorageFactory: config => new ChromeExtensionStorage(config.cookieDomain!, config.cookieName),
-  clientFactory: getWorkOS,
-});
+};
