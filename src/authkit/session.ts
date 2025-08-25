@@ -6,7 +6,7 @@ interface SealedSession {
   salt: string;
 }
 
-interface SessionData {
+export interface SessionData {
   user?: {
     object?: string;
     id?: string;

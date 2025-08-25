@@ -26,32 +26,43 @@ export default function Popup() {
     try {
       // Debug: Check what cookies are available
       const cookies = await chrome.cookies.getAll({
-        url: 'http://localhost:3000'
+        url: 'http://localhost:3000',
       });
-      console.log('🍪 POPUP: Available cookies:', cookies.map(c => ({ 
-        name: c.name, 
-        domain: c.domain,
-        httpOnly: c.httpOnly,
-        value: c.value.substring(0, 20) + '...' 
-      })));
+      console.log(
+        '🍪 POPUP: Available cookies:',
+        cookies.map(c => ({
+          name: c.name,
+          domain: c.domain,
+          httpOnly: c.httpOnly,
+          value: c.value.substring(0, 20) + '...',
+        })),
+      );
 
       const auth = await authkit.withAuth();
 
       // If we have a session, notify the service worker
       if (auth.user && auth.accessToken) {
-        chrome.runtime.sendMessage({
-          action: 'sessionActive',
-          user: auth.user,
-          hasAccessToken: true
-        }).catch((error) => {
-          console.error('❌ POPUP: Failed to notify service worker:', error);
-        });
+        chrome.runtime
+          .sendMessage({
+            action: 'sessionActive',
+            user: auth.user,
+            hasAccessToken: true,
+          })
+          .catch(error => {
+            console.error('❌ POPUP: Failed to notify service worker:', error);
+          });
       } else {
       }
 
       setStatus({
         isAuthenticated: !!auth.user,
-        user: auth.user,
+        user: auth.user
+          ? {
+              email: typeof auth.user.email === 'string' ? auth.user.email : '',
+              firstName: typeof auth.user.firstName === 'string' ? auth.user.firstName : null,
+              lastName: typeof auth.user.lastName === 'string' ? auth.user.lastName : null,
+            }
+          : null,
         // Note: authkit-js doesn't expose token expiration directly
         // The client handles automatic refresh internally
         expiresIn: undefined,

@@ -1,15 +1,36 @@
 import { authkit } from './authkit';
 import { isTokenExpiring, parseJwtClaims } from './jwtUtils';
 import { sealSession } from './session';
+import type { SessionData as IronSessionData } from './session';
 import conf from '../../config.json';
 
+// Import proper types from workos-node for consistency
+interface User {
+  id: string;
+  email: string;
+  emailVerified: boolean;
+  profilePictureUrl: string | null;
+  firstName: string | null;
+  lastName: string | null;
+  lastSignInAt: string | null;
+  createdAt: string;
+  updatedAt: string;
+  externalId: string | null;
+  metadata: Record<string, string>;
+}
+
+type Impersonator = {
+  email: string;
+  reason: string | null;
+} | null;
+
 interface SessionData {
-  user: any;
+  user: User;
   accessToken: string;
   refreshToken: string;
-  claims?: any;
-  sessionId?: string;
-  impersonator?: any;
+  claims?: Record<string, unknown> | null;
+  sessionId?: string | null;
+  impersonator?: Impersonator;
   source?: 'localStorage' | 'cookie';
   originalFormat?: string;
   cookieName?: string;
@@ -37,7 +58,10 @@ interface WorkOSTokenResponse {
   token_type: string;
   expires_in: number;
   user: WorkOSUserResponse;
-  impersonator?: any;
+  impersonator?: {
+    email: string;
+    reason: string | null;
+  } | null;
 }
 
 /**
@@ -96,10 +120,27 @@ export class TokenRefresher {
       }
 
       // Check if token is expiring using our JWT utils
-      if (isTokenExpiring(auth.accessToken, this.refreshBufferSeconds)) {
-        await this.refreshTokens(auth as SessionData);
+      if (isTokenExpiring(typeof auth.accessToken === 'string' ? auth.accessToken : '', this.refreshBufferSeconds)) {
+        // Ensure we have all required fields for SessionData with proper type conversion
+        const sessionData: SessionData = {
+          user: auth.user as User,
+          accessToken: typeof auth.accessToken === 'string' ? auth.accessToken : '',
+          refreshToken: typeof auth.refreshToken === 'string' ? auth.refreshToken : '',
+          claims: auth.claims || null,
+          sessionId: typeof auth.sessionId === 'string' ? auth.sessionId : null,
+          impersonator:
+            auth.impersonator && typeof auth.impersonator === 'object' && 'email' in auth.impersonator
+              ? (auth.impersonator as Impersonator)
+              : null,
+          source: auth.source as 'localStorage' | 'cookie',
+          originalFormat: auth.originalFormat,
+          cookieName: auth.cookieName,
+          originalCookieValue: auth.originalCookieValue,
+        };
+        await this.refreshTokens(sessionData);
       } else {
-        const claims = parseJwtClaims(auth.accessToken);
+        const accessToken = typeof auth.accessToken === 'string' ? auth.accessToken : '';
+        const claims = parseJwtClaims(accessToken);
         if (claims?.exp) {
           const currentTime = Math.floor(Date.now() / 1000);
           const timeRemaining = claims.exp - currentTime;
@@ -120,9 +161,8 @@ export class TokenRefresher {
     }
 
     this.isRefreshing = true;
-    
+
     try {
-      
       const response = await fetch('https://api.workos.com/user_management/authenticate', {
         method: 'POST',
         headers: {
@@ -141,8 +181,7 @@ export class TokenRefresher {
       }
 
       const tokenResponse: WorkOSTokenResponse = await response.json();
-      
-      
+
       // Create updated session data with proper field mapping
       // Convert snake_case WorkOS API response to camelCase AuthKit session format
       const updatedSession = {
@@ -174,8 +213,6 @@ export class TokenRefresher {
 
       // Save the updated session back to the original source
       await this.saveUpdatedSession(updatedSession);
-      
-      
     } catch (error) {
       console.error('Error refreshing tokens:', error);
       // TODO: Add retry logic and handle refresh failures
@@ -207,9 +244,9 @@ export class TokenRefresher {
   private async saveToLocalStorage(sessionData: SessionData) {
     // Get tabs that match our domain to inject script
     const tabs = await chrome.tabs.query({
-      url: conf.cookieDomain + "/*"
+      url: conf.cookieDomain + '/*',
     });
-    
+
     if (tabs.length === 0) {
       console.warn('No matching tabs found to update localStorage');
       return;
@@ -226,11 +263,7 @@ export class TokenRefresher {
           localStorage.setItem('workos:user', userString);
         }
       },
-      args: [
-        sessionData.accessToken,
-        sessionData.refreshToken,
-        JSON.stringify(sessionData.user)
-      ]
+      args: [sessionData.accessToken, sessionData.refreshToken, JSON.stringify(sessionData.user)],
     });
   }
 
@@ -248,18 +281,29 @@ export class TokenRefresher {
     }
 
     try {
-      
       // Prepare session data for sealing (match iron-session format exactly)
-      const sessionForSealing = {
-        accessToken: sessionData.accessToken,  // camelCase, not snake_case
+      const sessionForSealing: IronSessionData = {
+        accessToken: sessionData.accessToken, // camelCase, not snake_case
         refreshToken: sessionData.refreshToken, // camelCase, not snake_case
-        user: sessionData.user,
+        user: {
+          id: sessionData.user.id,
+          email: sessionData.user.email,
+          firstName: sessionData.user.firstName || undefined,
+          lastName: sessionData.user.lastName || undefined,
+          emailVerified: sessionData.user.emailVerified,
+          profilePictureUrl: sessionData.user.profilePictureUrl,
+          lastSignInAt: sessionData.user.lastSignInAt,
+          createdAt: sessionData.user.createdAt,
+          updatedAt: sessionData.user.updatedAt,
+          externalId: sessionData.user.externalId,
+          metadata: sessionData.user.metadata,
+        },
         impersonator: sessionData.impersonator,
       };
-      
+
       // Seal the session using iron-session compatible format
       const sealedSession = await sealSession(sessionForSealing);
-      
+
       // Update the cookie
       await chrome.cookies.set({
         url: conf.cookieDomain,
@@ -267,10 +311,8 @@ export class TokenRefresher {
         value: sealedSession,
         httpOnly: true,
         secure: conf.cookieDomain.startsWith('https:'),
-        sameSite: 'lax'
+        sameSite: 'lax',
       });
-      
-      
     } catch (error) {
       console.error('Failed to seal and update cookie:', error);
     }
@@ -286,3 +328,4 @@ export function getTokenRefresher(): TokenRefresher {
   }
   return tokenRefresher;
 }
+
