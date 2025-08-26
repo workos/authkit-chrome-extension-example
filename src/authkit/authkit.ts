@@ -38,7 +38,9 @@ export const authkit = {
   },
 
   /**
-   * Check for session using localStorage (AuthKit React devMode=true) or cookies
+   * Check for existing AuthKit session via cookies or localStorage.
+   * Handles both cookie-based sessions and localStorage sessions (devMode).
+   * @returns Authentication result with user data if authenticated
    */
   async checkStorageBasedSession() {
     try {
