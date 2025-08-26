@@ -17,7 +17,7 @@ Works with:
 1. Clone and install:
 
 ```bash
-git clone <repository-url>
+git clone git@github.com/workos/authkit-chrome-extension-example.git
 cd authkit-chrome-example
 pnpm install
 ```
@@ -104,7 +104,6 @@ In `src/authkit/tokenRefresher.ts`:
 
 ## Limitations
 
-- Can't access httpOnly cookies (browser security restriction)
 - Requires the AuthKit app tab to be open for localStorage updates
 - Cookie encryption must match your app's iron-session configuration
 
